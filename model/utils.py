@@ -692,3 +692,71 @@ def predict_new_data(file_path, model, scaler):
     return new_data, predicted_data
 
 #######################################################################################
+
+
+import requests
+
+def api_request(stockName, timeFrame, start, end):
+    url = f"https://stocks.techglobetrading.com/stocks/range/{stockName}/range/1/{timeFrame}/{start}/{end}"
+    headers = {
+        'Authorization': 'WZRXIAM4HGSQ'
+    }
+    
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(f"API request failed with status code {response.status_code}")
+    
+    data = response.json()
+    df = pd.DataFrame(data)
+    
+    # Convert timestamp to datetime
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+    df['timestamp'] = df['timestamp'].dt.tz_convert('US/Eastern')
+    
+    # Assuming the API returns similar columns as Polygon
+    # Adjust the column handling based on actual API response
+    if 'transactions' in df.columns:
+        df.drop(['transactions'], axis=1, inplace=True)
+    if 'otc' in df.columns:
+        df.drop(['otc'], axis=1, inplace=True)
+        
+    return df
+
+def get_stock_data(stockName, timeFrame, unit, todate=None, BD=150):
+    if todate is None:
+        todate = datetime.now().strftime('%Y-%m-%d')
+    else:
+        try:
+            print(f'todate is {todate}')
+            datetime.strptime(todate, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError("Incorrect date format for todate, should be YYYY-MM-DD")
+
+    todate_dt = pd.to_datetime(todate)
+    fromDate = todate_dt - BDay(BD)
+    
+    print(f'get data from API from {fromDate.strftime("%Y-%m-%d")} to {todate_dt} ..........')
+    
+    # Validate timespan unit
+    if unit not in ['second', 'minute']:
+        raise ValueError("unit ต้องเป็น 'second' หรือ 'minute' เท่านั้น")
+    
+    # Call the new API request function
+    data = api_request(
+        stockName,
+        timeFrame,
+        fromDate.strftime('%Y-%m-%d'),
+        todate
+    )
+    
+    data = data.reset_index(drop=True)
+    
+    # Ensure timestamp is in correct timezone
+    if not pd.api.types.is_datetime64tz_dtype(data['timestamp']):
+        data['timestamp'] = data['timestamp'].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+    else:
+        data['timestamp'] = data['timestamp'].dt.tz_convert('US/Eastern')
+    
+    data = data.sort_values(by='timestamp').reset_index(drop=True)
+    
+    return data
